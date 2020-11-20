@@ -1,0 +1,257 @@
+# Prediction Assignment Writeup
+
+<br/>
+
+*Lucas Young*  
+*20 November 2020* 
+
+<br/>
+
+## Background
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset). 
+
+
+<br/>
+
+## Load Data / Packages
+
+Load packages:
+```{r message = FALSE, warning = FALSE}
+
+library(caret)
+library(rpart)
+library(rattle)
+library(randomForest)
+library(gbm)
+
+```
+
+Load training and testing data sets:
+```{r}
+
+RawTraining <- read.csv('./pml-training.csv', header = TRUE)
+
+RawQuiz <- read.csv('./pml-testing.csv', header = TRUE)
+
+```
+
+Check raw training data dimensions:
+```{r}
+
+dim(RawTraining)
+
+```
+
+Check raw testing data dimensions:
+```{r}
+
+dim(RawQuiz)
+
+```
+
+Check structure of raw training data:
+```{r}
+
+str(RawTraining, list.len = 25)
+
+```
+
+
+<br/>
+
+## Clean Data
+
+Remove variables with all NA values from training set:
+```{r}
+
+Training <- RawTraining[, colSums(is.na(RawTraining)) == 0]
+
+```
+
+Remove unneeded columns (time, user, etc.) from training and testing data sets:
+```{r}
+
+Training <- Training[, -c(1:7)]
+
+```
+
+Remove variables with near-zero variance:
+```{r}
+
+NearZeroVariance <- nearZeroVar(Training)
+
+Training <- Training[, -NearZeroVariance]
+
+```
+
+Check clean training data dimensions:
+```{r}
+
+dim(Training)
+
+```
+
+Check structure of clean training data:
+```{r}
+
+str(Training, list.len = 25)
+
+```
+
+
+<br/>
+
+## Partition Training Data Set
+
+Split training data set:
+```{r}
+
+set.seed(12345)
+
+InTrain <- createDataPartition(Training$classe, p = 0.6, list = FALSE)
+
+TrainingPartition <- Training[InTrain,]
+
+TestingPartition <- Training[-InTrain,]
+
+```
+
+Check dimensions of training partition:
+```{r}
+
+dim(TrainingPartition)
+
+```
+
+Check dimensions of testing partition:
+```{r}
+
+dim(TestingPartition)
+
+```
+
+
+
+<br/>
+
+## Train Models
+
+Train classification tree model:
+```{r}
+
+set.seed(12345)
+
+ModelCT <- rpart(classe ~ ., 
+                 method = 'class', 
+                 data = TrainingPartition)
+
+```
+
+Review classification tree model:
+```{r, fig.width = 9}
+
+fancyRpartPlot(ModelCT)
+
+```
+
+<br/>
+
+Train random forest model:
+```{r}
+
+set.seed(12345)
+
+ModelRF <- train(classe ~ .,
+                 method = 'rf', 
+                 data = TrainingPartition,
+                 trControl = trainControl(method = 'cv',
+                                          number = 3,
+                                          verboseIter = FALSE))
+
+```
+
+Review random forest model:
+```{r}
+
+ModelRF$finalModel
+
+```
+
+<br/>
+
+Train generalized boosted regression model:
+```{r}
+
+set.seed(12345)
+
+ModelGBM <- train(classe ~ ., 
+                  method = 'gbm', 
+                  data = TrainingPartition,
+                  trControl = trainControl(method = 'cv',
+                                           number = 3),
+                  verbose = FALSE)
+
+```
+
+Review generalized boosted regression model:
+```{r}
+
+print(ModelGBM)
+
+```
+
+<br/>
+
+## Test Models
+
+Validate the classification tree model:
+```{r}
+
+PredictCT <- predict(ModelCT, TestingPartition, type = 'class')
+
+confusionMatrix(PredictCT, TestingPartition$classe)
+
+```
+We see that the classification tree model had an accuracy of 74.7%.
+
+<br/>
+
+Validate the random forest model:
+```{r}
+
+PredictRF <- predict(ModelRF, newdata = TestingPartition)
+
+confusionMatrix(PredictRF, TestingPartition$classe)
+
+```
+We see that the random forest model had an accuracy of 99.4%.
+
+<br/>
+
+Validate the generalized boosted regression model:
+```{r}
+
+PredictGBM <- predict(ModelGBM, newdata = TestingPartition)
+
+confusionMatrix(PredictGBM, TestingPartition$classe)
+
+```
+We see that the random forest model had an accuracy of 96.4%.
+
+
+
+<br/>
+
+## Predict Quiz Answers
+
+Since the random forest model performed the best, we will use it to predict the quiz answers:
+```{r}
+
+PredictQuiz <- predict(ModelRF, newdata = RawQuiz)
+
+QuizAnswers <- cbind(RawQuiz, PredictQuiz)
+
+QuizAnswers <- QuizAnswers[,c('X','PredictQuiz')]
+
+```
